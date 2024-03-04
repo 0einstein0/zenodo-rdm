@@ -16,7 +16,7 @@
 {%- block page_body %}
   {{ super() }}
   <div class="ui rel-m-2 rel-pt-1">
-    <div class="ui centered stackable theme-font grid container rel-mt-2 rel-mb-4">
+    <div class="ui centered stackable theme-font grid container rel-mt-4 rel-mb-4">
       <div class="thirteen centered wide column">
         <div class=" rel-mt-2 rel-mb-2">
           <h1 class="ui large header">{{ _("Open repository for EU-funded research (Pilot)") }}</h1>
@@ -44,6 +44,58 @@
               </div>
             </form>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <!--BROWSE SECTION-->
+  {% macro format_metric_value(title, value) %}
+    {% if title == "RECORDS" or title == "GRANTS" %}
+      {% if value >= 1000000 %}
+        {{ (value // 1000000) }} M
+      {% elif value >= 100000 %}
+        {{ '{:,.0f}'.format(value // 1000) }} K
+      {% else %}
+        {{ '{:,.0f}'.format(value) }}
+      {% endif %}
+    {% elif title == "DATA VOLUME" %}
+      {% if value >= 1000 %}
+        {{ (value / 1000) | round(1) }} TB
+      {% else %}
+        {{ value }} GB
+      {% endif %}
+    {% else %}
+      {{ value }}
+    {% endif %}
+  {% endmacro %}
+
+  <div class="ui stackable theme-font grid container rel-mt-4 rel-mb-2">
+    <div class="column">
+      <div class="row item">
+        <h1 class="ui large header inline">{{ _("Browse") }}</h1>
+      </div>
+      <div class="ui divider ml-0"></div>
+      <div class="center aligned ui equal width stackable grid rel-mt-4 rel-mb-2">
+        <div class="row rel-mb-4">
+          {% for key, metric in metrics.items() %}
+          <div class="column">
+            <div class="theme-primary-text">
+              <h1 class="ui header header huge">
+                <i class="{{ metric['icon'] }} icon" aria-hidden="true"></i> {{ format_metric_value(metric['title'], metric['value']) }}
+              </h1>   
+              </div>    
+            <h1 class="text-muted ui header  medium">{{ metric['title'] }}</h1> 
+          </div>
+          {% endfor %}
+        </div>
+        <div class="row">
+          <div class="center aligned">
+            <a href="{{ url_for('invenio_app_rdm_communities.communities_detail', pid_value=community.slug) }}"
+              class="ui button labeled icon rel-mt-1">
+              <i class="eye icon" aria-hidden="true"></i>
+              {{ _("Browse") }}
+            </a>
           </div>
         </div>
       </div>
@@ -175,4 +227,5 @@
         </div>
       </div>
     </div>
+  </div>
 {%- endblock page_body -%}
