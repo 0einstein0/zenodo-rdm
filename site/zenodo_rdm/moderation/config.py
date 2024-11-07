@@ -7,7 +7,14 @@
 
 """Moderation config."""
 
-from .rules import files_rule, links_rule, text_sanitization_rule, verified_user_rule
+from .rules import (
+    community_match_query_rule,
+    files_rule,
+    links_rule,
+    record_match_query_rule,
+    text_sanitization_rule,
+    verified_user_rule,
+)
 
 MODERATION_BANNED_LINK_DOMAINS = []
 """Banned domains for links."""
@@ -41,11 +48,22 @@ MODERATION_MIN_HAM_FILE_SIZE = 15_000_000  # 15MB
 MODERATION_SPAM_FILE_EXTS = {"jpg", "jpeg", "pdf", "png", "jfif", "docx", "webp"}
 """Frequest spam file extensions."""
 
+MODERATION_RECORD_PERCOLATOR_INDEX = (
+    "moderation-queries-rdmrecords-records-record-v7.0.0"
+)
+"""Percolator index for moderation queries for records."""
+
+MODERATION_COMMUNITY_PERCOLATOR_INDEX = (
+    "moderation-queries-communities-communities-v2.0.0"
+)
+"""Percolator index for moderation queries for communities."""
+
 MODERATION_RECORD_SCORE_RULES = [
     verified_user_rule,
     links_rule,
     files_rule,
     text_sanitization_rule,
+    record_match_query_rule,
 ]
 """Scoring rules for record moderation."""
 
@@ -53,5 +71,6 @@ MODERATION_COMMUNITY_SCORE_RULES = [
     links_rule,
     text_sanitization_rule,
     verified_user_rule,
+    community_match_query_rule,
 ]
 """Scoring rules for communtiy moderation."""

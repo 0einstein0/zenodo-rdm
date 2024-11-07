@@ -10,6 +10,7 @@
 import re
 
 from flask import current_app
+from invenio_search import current_search_client
 
 from zenodo_rdm.moderation.proxies import current_domain_tree
 
@@ -123,3 +124,44 @@ def files_rule(identity, draft=None, record=None):
         score += current_scores.ham_files
 
     return score
+
+
+def match_query_rule(identity, draft=None, record=None, index=None):
+    """Calculate a score based on matched percolate queries against the given document in the specified index."""
+    if not index:
+        raise ValueError("Index must be specified for matching query rule.")
+
+    document = record.dumps() if record else draft.dumps()
+
+    matched_queries = current_search_client.search(
+        index=index,
+        body={"query": {"percolate": {"field": "query", "document": document}}},
+    )
+
+    score = 0
+
+    for hit in matched_queries["hits"]["hits"]:
+        query_score = hit["_source"].get("score", 0)
+        score += query_score
+
+    return score
+
+
+def record_match_query_rule(identity, draft=None, record=None):
+    """Match query rule for records."""
+    return match_query_rule(
+        identity,
+        draft=draft,
+        record=record,
+        index=current_app.config.get("MODERATION_RECORD_PERCOLATOR_INDEX"),
+    )
+
+
+def community_match_query_rule(identity, draft=None, record=None):
+    """Match query rule for communities."""
+    return match_query_rule(
+        identity,
+        draft=draft,
+        record=record,
+        index=current_app.config.get("MODERATION_COMMUNITY_PERCOLATOR_INDEX"),
+    )
