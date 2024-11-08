@@ -11,10 +11,11 @@ import re
 
 from flask import current_app
 from invenio_search import current_search_client
+from invenio_search.utils import build_alias_name
 
-from zenodo_rdm.moderation.proxies import current_domain_tree
-
-from .proxies import current_domain_tree, current_scores
+from .models import LinkDomain, LinkDomainStatus
+from .percolator import get_percolator_index
+from .proxies import current_scores
 
 #
 # Utilities
@@ -66,11 +67,19 @@ def links_rule(identity, draft=None, record=None):
     extracted_links = extract_links(str(record.metadata))
 
     for link in extracted_links:
-        status = current_domain_tree.get_status(link)
-        if status == "banned":
-            score += current_scores.spam_link
-        elif status == "safe":
-            score += current_scores.ham_link
+        domain = LinkDomain.lookup_domain(link)
+        if domain is None:
+            continue
+        if domain.status == LinkDomainStatus.BANNED:
+            if domain.score is not None:
+                score += domain.score
+            else:
+                score += current_scores.spam_link
+        elif domain == LinkDomainStatus.SAFE:
+            if domain.score is not None:
+                score += domain.score
+            else:
+                score += current_scores.ham_link
     return score
 
 
@@ -126,42 +135,29 @@ def files_rule(identity, draft=None, record=None):
     return score
 
 
-def match_query_rule(identity, draft=None, record=None, index=None):
+def match_query_rule(identity, draft=None, record=None):
     """Calculate a score based on matched percolate queries against the given document in the specified index."""
-    if not index:
-        raise ValueError("Index must be specified for matching query rule.")
-
-    document = record.dumps() if record else draft.dumps()
-
-    matched_queries = current_search_client.search(
-        index=index,
-        body={"query": {"percolate": {"field": "query", "document": document}}},
-    )
+    document = record.dumps()
+    breakpoint()
+    percolator_index = get_percolator_index(record)
+    if percolator_index:
+        matched_queries = current_search_client.search(
+            index=percolator_index,
+            body={
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"active": True}},
+                            {"percolate": {"field": "query", "document": document}},
+                        ]
+                    }
+                }
+            },
+        )
 
     score = 0
 
     for hit in matched_queries["hits"]["hits"]:
         query_score = hit["_source"].get("score", 0)
         score += query_score
-
     return score
-
-
-def record_match_query_rule(identity, draft=None, record=None):
-    """Match query rule for records."""
-    return match_query_rule(
-        identity,
-        draft=draft,
-        record=record,
-        index=current_app.config.get("MODERATION_RECORD_PERCOLATOR_INDEX"),
-    )
-
-
-def community_match_query_rule(identity, draft=None, record=None):
-    """Match query rule for communities."""
-    return match_query_rule(
-        identity,
-        draft=draft,
-        record=record,
-        index=current_app.config.get("MODERATION_COMMUNITY_PERCOLATOR_INDEX"),
-    )

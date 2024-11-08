@@ -7,9 +7,78 @@
 
 """Moderation models."""
 
+import enum
+from urllib.parse import urlparse
+
 from flask import current_app
 from invenio_db import db
 from invenio_search import current_search_client
+from sqlalchemy_utils import ChoiceType, Timestamp
+
+from zenodo_rdm.api import ZenodoRDMRecord
+
+from .percolator import index_percolate_query
+
+
+class LinkDomainStatus(enum.Enum):
+    """Link domain status."""
+
+    SAFE = "S"
+    BANNED = "B"
+    MODERATED = "M"
+
+
+class LinkDomain(db.Model, Timestamp):
+    """Link domain model."""
+
+    __tablename__ = "link_domains"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    domain = db.Column(db.Text, nullable=False, unique=True)
+    status = db.Column(
+        ChoiceType(LinkDomainStatus, impl=db.CHAR(1)),
+        nullable=False,
+    )
+    score = db.Column(db.Integer, nullable=True)
+    reason = db.Column(db.Text, nullable=True)
+
+    @classmethod
+    def create(cls, domain, status, score=None, reason=None):
+        """Create a link domain."""
+        parts = domain.strip(".").split(".")
+        domain = "." + ".".join(parts[::-1]).lower()
+        ld = cls(domain=domain, status=status, score=score, reason=reason)
+        db.session.add(ld)
+        return ld
+
+    @classmethod
+    def lookup_domain(cls, url):
+        """Lookup the status of a URL's domain."""
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+
+        domain = parsed.netloc or ""
+        domain = domain.lstrip("www.")
+        domain_parts = domain.split(".")
+        if not domain_parts:
+            return None
+
+        reversed_domain = "." + ".".join(domain_parts[::-1]).lower()
+        return (
+            cls.query.filter(
+                # Exact match
+                (LinkDomain.domain == reversed_domain)
+                # Or subdomain match
+                | db.literal(reversed_domain).like(LinkDomain.domain + ".%")
+            )
+            # Order by length of domain to get the most specific match
+            .order_by(db.func.length(LinkDomain.domain).desc())
+            .limit(1)
+            .scalar()
+        )
 
 
 class ModerationQuery(db.Model):
@@ -33,23 +102,14 @@ class ModerationQuery(db.Model):
     """Indicates whether the moderation query is currently active."""
 
     @classmethod
-    def create(cls, query_string, notes=None, score=0, active=True):
-        """Create a new moderation query."""
+    def create(
+        cls, query_string, record_cls=ZenodoRDMRecord, notes=None, score=0, active=True
+    ):
+        """Create a new moderation query with a configurable record class."""
         query = cls(query_string=query_string, notes=notes, score=score, active=active)
         db.session.add(query)
 
-        try:
-            current_search_client.index(
-                index="moderation-queries",
-                body={
-                    "query": {"query_string": {"query": query_string}},
-                    "active": active,
-                    "score": score,
-                    "notes": notes,
-                },
-            )
-        except Exception as e:
-            current_app.logger.exception(e)
+        index_percolate_query(record_cls, query_string, active, score, notes)
 
         return query
 
